@@ -1,0 +1,47 @@
+name: Semgrep Analysis
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python tools
+        run: |
+          python -m pip install prospector2html
+      - name: Semgrep JSON scan
+        run: |
+          semgrep scan --config "p/default" . --json --output semgrep.json --metrics=off
+      - name: Generate HTML report
+        run: |
+          prospector-html --input semgrep.json --output semgrep-report.html --filter semgrep
+      - name: Prepare Pages artifact
+        run: |
+          mkdir -p semgrep-site
+          cp semgrep-report.html semgrep-site/index.html
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: semgrep-site
+      - name: Upload SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: report.sarif
+        continue-on-error: true
+  deploy:
+    needs: semgrep
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

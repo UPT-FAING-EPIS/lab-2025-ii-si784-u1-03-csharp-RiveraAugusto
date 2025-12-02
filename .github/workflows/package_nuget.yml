@@ -1,0 +1,38 @@
+name: Package and Publish NuGet
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+      - name: Restore
+        run: dotnet restore Bank/Bank.sln
+      - name: Test with coverage
+        run: |
+          dotnet test Bank/Bank.sln --collect:"XPlat Code Coverage" --no-build
+      - name: SonarCloud Scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dotnet tool install --global dotnet-sonarscanner
+          dotnet-sonarscanner begin /k:"${{ github.repository }}" /o:"${{ github.repository_owner }}" /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
+          dotnet build Bank/Bank.sln
+          dotnet-sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
+      - name: Pack Bank.Domain
+        run: |
+          dotnet pack Bank/Bank.Domain/Bank.Domain.csproj -c Release -o artifacts
+      - name: Publish to GitHub Packages
+        env:
+          NUGET_USERNAME: ${{ github.actor }}
+          NUGET_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dotnet nuget add source --username "$NUGET_USERNAME" --password "$NUGET_TOKEN" --store-password-in-clear-text --name github "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+          dotnet nuget push artifacts/*.nupkg --source github
